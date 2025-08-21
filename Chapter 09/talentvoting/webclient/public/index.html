@@ -1,0 +1,214 @@
+<html>
+    <head>
+        <link href="//fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" type="text/css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css" type="text/css">
+
+        <!-- Load Firebase auth and its dependencies -->
+        <script  src="/__/firebase/11.1.0/firebase-app-compat.js"></script>
+        <script  src="/__/firebase/11.1.0/firebase-auth-compat.js"></script>
+        
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        
+        <!-- Import our app's Firebase configuration from an external module -->
+        <script type="module">
+          import { firebaseConfig } from './config.js';
+          window.firebaseAuthIdentifier = firebaseConfig;
+        </script>
+      </head>
+    <body>
+         <h1>Login page</h1>
+         <div class="container">
+          <!-- We show one of two sections at any time - depending on the current user's login status -->
+           <section id="signed-in">
+            <h2>You are logged in</h2>
+            Application: <p id="application"></p>
+            Username: <p id="userName"></p>
+            <button id="logout">Logout</button>
+            <br/>
+            <form id="actsForm"
+              method="post">
+              <hr/>
+              <input type="hidden" id="votedAct" name="votedAct" />
+              <input type="button" id="actsButton" name="actsButton" value="Get Acts" />              
+              <table align="center" id="actsTable" border="1">
+                <thead>
+                  <TR><TH>Name</TH><TH>--</TH></TR>
+                </thead>
+                <!-- This gets replaced and populated as Acts are loaded from the remote service -->
+                <tbody name="tbody"/>
+                </tbody>
+              </table>
+              <!-- When a login completes this gets set for the remote service -->
+              <input id="idToken" type="hidden" name="idToken" />
+          </form>
+        </section>
+        <!-- If no user is logged in, all you can do is login -->
+          <section id="signed-out">
+            <h2>You are signed out</h2>
+            <button id="login">Login</button>
+          </section>
+        </div>
+
+        <script type="module">
+          import { initFirebaseAuth, googleLogin, logout } from './firebase-auth.js';
+          import { getActsURL, voteURL} from './config.js';
+
+           // Show either the logged in section or the logged out section
+           function setView(showView) {
+             const views = [ '#signed-in', '#signed-out', '#no-config' ]
+             views.forEach(view => {
+               if (view === showView) {
+                 $(view).show();
+               } else {
+                 $(view).hide();
+               }
+             })
+           }
+
+          // This is the function that invokes Firebase auth and sets the view 
+          const initAuth = (settings) => {
+            try {
+              console.debug(settings);
+              initFirebaseAuth({
+                ...settings,
+                loggedIn: (user, token) => {
+                  document.getElementById("application").innerHTML = settings.projectId;
+                  console.debug(user.email);
+                  setView('#signed-in');
+                },
+                loggedOut: () => {
+                  setView('#signed-out');
+                }
+              });
+            } catch (err)  {
+              console.log(err);
+              $('#error').text(err.message).show();
+            }
+          }
+
+          // Actually try to authenticate the user
+          try {
+               initAuth(window.firebaseAuthIdentifier);
+          } catch (err) {
+            console.log(err);
+          }
+
+          // With everything setup, listen for clicks on the login and logout buttons
+          $('#login').click(() => googleLogin(loginErrorCallback));
+          $('#logout').click(() => logout());
+
+          // Listen for the auth state to change and store the user info on the document
+          firebase.auth().onAuthStateChanged(async function(user) {
+             if (user) {
+                 // User is signed in.
+                 console.log(firebase.auth().currentUser.uid);
+                 console.log(user.email);
+                 document.getElementById("userName").innerHTML = user.email;
+                 user.getIdToken().then((idToken) => {
+                 console.log(idToken);
+                 document.getElementById("idToken").value=idToken;
+                });
+                console.log(new Date(). getTime()); 
+             } else {
+                console.log('Not logged in');
+                console.log(new Date(). getTime()); 
+                document.getElementById("userName").innerHTML = '';
+                document.getElementById("idToken").value = '';
+             }
+            });
+ 
+           // Send a form to a remote service 
+           // Pass the json response to a callback
+           function getResponse(form, url, callback) {
+            console.log(url);
+            fetch(url, {
+              method: form.method,
+              body: new FormData(form)
+            })
+            .then(function (response){ 
+               if(response.ok) {  
+                 response.json() 
+                   .then(function(response) {
+                      console.log('response: ', new Date(). getTime(), ' ', response);
+                      callback(response);
+                  });
+                 }
+               else {
+                 console.log('HTTP-Error: ' + response.status);
+                 throw Error('Something went wrong');
+               }
+             })
+             .catch(function(error) {
+               console.log(error);
+              });
+          }
+ 
+          // Process the response from a remote "vote" call
+          // For now we just confirm the vote request going round trip
+          function checkVote(responseJson) {
+            console.log("checkVote", new Date(), responseJson);
+            const act = responseJson['act'];
+            alert('you voted for ' + act + '!')
+           }
+
+           // Handle the response from a remote "getActs" call
+           // Load the acts into the HTML table
+           // Add vote buttons for eligible acts
+           // Add listeners for the vote buttons
+           function setActs(responseJson) {
+            console.log("setActs", new Date(), responseJson);
+            // Traversing the JSON data
+            let acts = responseJson['acts'];
+            console.log("data has ", acts.length, " rows");
+            const tBody = actsTable.getElementsByTagName('tbody')[0];
+            for (let rowIdx = 0; rowIdx < acts.length; rowIdx++) {
+               console.log('Row: ', rowIdx, ' is "', acts[rowIdx]['name'], '"');
+               let actRow = tBody.insertRow(-1)
+               actRow.insertCell(0).innerHTML = acts[rowIdx]['name'];
+               if (acts[rowIdx]['voting_eligible']) {
+                 let voteButton = document.createElement("button");
+                 voteButton.id = 'voteButton'
+                 voteButton.textContent = 'Vote';
+                 voteButton.className = 'voteButton';
+                 voteButton.type = 'button';
+                 voteButton.addEventListener('click', function(){vote(acts[rowIdx]['act'])});         
+                 actRow.insertCell(1).appendChild(voteButton);
+               } else {
+                actRow.insertCell(1).innerHTML = '--';
+               }
+            }
+           }
+
+           // Remove any old acts from the table and setup a new, empty table body
+           function resetActsTable() {
+             var newTBody = document.createElement('tbody');
+             newTBody.name = 'tbody';
+             const actsTable = document.getElementById('actsTable');
+             const tBody = actsTable.getElementsByTagName('tbody')[0];
+             tBody.replaceWith(newTBody);
+           }
+            
+           // Handle a Vote button click
+           function vote(actId) {
+             console.log("Cast vote", new Date(). getTime(), " act '", actId, "'");
+             document.getElementById('votedAct').value = actId;
+             getResponse(document.getElementById('actsForm'), voteURL, checkVote); 
+           }
+
+           // Handle a GetActs button click
+           function getActs() {
+            console.log("Get Acts", new Date(). getTime());
+            resetActsTable()
+            getResponse(document.getElementById('actsForm'), getActsURL, setActs);
+           }
+
+           function loginErrorCallback() {
+            console.error('error logging in');
+           }
+
+           // Listen for clicks on the Get Acts button 
+           $('#actsButton').click(() => getActs());
+         </script>
+    </body>
+</html>

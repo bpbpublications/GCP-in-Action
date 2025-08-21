@@ -1,0 +1,6 @@
+gunicorn==23.0.0
+Flask==3.0.3
+Werkzeug==3.0.3
+google-cloud-pubsub
+google-api-core
+google-cloud-spanner
